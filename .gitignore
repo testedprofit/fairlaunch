@@ -1,0 +1,13 @@
+node_modules/
+app/node_modules/
+app/dist/
+dist/
+artifacts/
+cache/
+typechain-types/
+.deployer-key
+deployer-key.txt
+faucet-account.txt
+app/.env
+*.log
+.DS_Store
