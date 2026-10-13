@@ -36,7 +36,7 @@ export default function LaunchForm({
   useEffect(() => {
     (async () => {
       try {
-        const factory = getFactory(await getProvider());
+        const factory = await getFactory(await getProvider());
         setFee(await factory.launchFee());
       } catch {
         /* factory not deployed / no wallet — fee stays 0 */
@@ -59,7 +59,7 @@ export default function LaunchForm({
     try {
       setBusy(true);
       const signer = await getSigner();
-      const factory = getFactory(signer);
+      const factory = await getFactory(signer);
       const allocations = allocs
         .filter((a) => a.beneficiary && a.amount)
         .map((a) => ({

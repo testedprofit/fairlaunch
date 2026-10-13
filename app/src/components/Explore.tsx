@@ -19,7 +19,7 @@ export default function Explore({ onSelect }: { onSelect: (token: string) => voi
     (async () => {
       try {
         const provider = await getProvider();
-        const factory = getFactory(provider);
+        const factory = await getFactory(provider);
         const count: bigint = await factory.launchCount();
         const out: LaunchRow[] = [];
         for (let i = Number(count) - 1; i >= 0 && out.length < 50; i--) {

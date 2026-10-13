@@ -27,7 +27,8 @@ Every FairLaunch token ships with:
   verifiable on-chain by any holder.
 
 The dApp (launch form, explorer of all launches, per-token manage page) is live
-on BSC Testnet. Contracts are tested (11/11 Hardhat tests) and compose audited
+on BSC Testnet. Contracts are tested (16/16 Hardhat tests, including a
+CREATE2 determinism proof and adversarial cases) and compose audited
 OpenZeppelin primitives; a professional audit is the first use of grant funds
 before mainnet promotion. The protocol charges a flat 0.02 BNB per launch
 (~$1–2) to a transparent treasury (50% security fund, 30% development, 20%

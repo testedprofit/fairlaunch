@@ -8,7 +8,7 @@
 
 ## Phase 0 — Concept & build ✅ DONE (Oct 13, 2026)
 
-- Contracts written, 11/11 tests passing (incl. 2 real bugs caught by tests)
+- Contracts written, 16/16 tests passing (incl. 3 real bugs caught by tests: trading-gate/vesting, fee-on-transfer locks, 24KB factory limit)
 - Frontend built (launch / explore / manage), builds clean
 - Protocol fee model (0.02 BNB/launch → treasury)
 - Whitepaper, grant-application draft ($25k ask), README runbook

@@ -18,6 +18,8 @@ contract CreatorToken is ERC20, Ownable {
 
     mapping(address => bool) public isExempt;
 
+    event ExemptionUpdated(address indexed account, bool exempt);
+
     constructor(
         string memory name_,
         string memory symbol_,
@@ -31,15 +33,19 @@ contract CreatorToken is ERC20, Ownable {
         require(owner_ != address(0) && mintTo_ != address(0), "bad address");
         maxWalletBps = maxWalletBps_;
         isExempt[owner_] = true;
+        emit ExemptionUpdated(owner_, true);
         isExempt[mintTo_] = true;
+        emit ExemptionUpdated(mintTo_, true);
         for (uint256 i = 0; i < extraExempt_.length; i++) {
             isExempt[extraExempt_[i]] = true;
+            emit ExemptionUpdated(extraExempt_[i], true);
         }
         _mint(mintTo_, totalSupply_);
     }
 
     function setExempt(address account, bool exempt) external onlyOwner {
         isExempt[account] = exempt;
+        emit ExemptionUpdated(account, exempt);
     }
 
     function enableTrading() external onlyOwner {

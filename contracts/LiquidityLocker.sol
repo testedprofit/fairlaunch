@@ -38,10 +38,17 @@ contract LiquidityLocker {
         require(amount > 0, "zero amount");
         require(unlockTime > block.timestamp, "unlock in past");
         require(beneficiary != address(0), "bad beneficiary");
-        IERC20(lpToken).safeTransferFrom(msg.sender, address(this), amount);
+        // Measure actual received balance: fee-on-transfer / deflationary tokens
+        // may deliver less than `amount`. Recording `amount` would brick the
+        // lock (withdraw would revert on insufficient balance).
+        IERC20 token = IERC20(lpToken);
+        uint256 before = token.balanceOf(address(this));
+        token.safeTransferFrom(msg.sender, address(this), amount);
+        uint256 received = token.balanceOf(address(this)) - before;
+        require(received > 0, "nothing received");
         lockId = locks.length;
-        locks.push(Lock(lpToken, beneficiary, amount, unlockTime, false));
-        emit Locked(lockId, lpToken, beneficiary, amount, unlockTime);
+        locks.push(Lock(lpToken, beneficiary, received, unlockTime, false));
+        emit Locked(lockId, lpToken, beneficiary, received, unlockTime);
     }
 
     function withdraw(uint256 lockId) external {

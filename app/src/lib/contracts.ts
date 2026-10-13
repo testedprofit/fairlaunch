@@ -1,12 +1,13 @@
 import { ethers } from "ethers";
-import { FACTORY_ADDRESS, LOCKER_ADDRESS } from "../config";
+import { CHAINS, ZERO, isDeployed } from "../config";
 
 export const FACTORY_ABI = [
   "function createLaunch(string name_, string symbol_, uint256 totalSupply_, uint256 maxWalletBps_, tuple(address beneficiary, uint256 amount, uint64 start, uint64 duration)[] allocations) returns (address token)",
   "function launchCount() view returns (uint256)",
   "function launchFee() view returns (uint256)",
+  "function creatorLaunchNonce(address) view returns (uint256)",
   "function launches(uint256) view returns (address token, address creator, address[] vestingWallets, uint256 timestamp)",
-  "event LaunchCreated(address indexed token, address indexed creator, address[] vestingWallets, uint256 totalSupply, uint256 timestamp)",
+  "event LaunchCreated(address indexed token, address indexed creator, address[] vestingWallets, uint256 totalSupply, uint256 timestamp, uint256 launchNonce)",
 ];
 
 export const TOKEN_ABI = [
@@ -21,6 +22,7 @@ export const TOKEN_ABI = [
   "function approve(address,uint256) returns (bool)",
   "function transfer(address,uint256) returns (bool)",
   "function enableTrading()",
+  "event ExemptionUpdated(address indexed account, bool exempt)",
 ];
 
 export const LOCKER_ABI = [
@@ -50,12 +52,33 @@ export async function getProvider(): Promise<ethers.BrowserProvider> {
   return new ethers.BrowserProvider(window.ethereum);
 }
 
-export function getFactory(signerOrProvider: ethers.Signer | ethers.Provider) {
-  return new ethers.Contract(FACTORY_ADDRESS, FACTORY_ABI, signerOrProvider);
+export async function chainIdOf(signerOrProvider: ethers.Signer | ethers.Provider): Promise<number> {
+  const provider: ethers.Provider | undefined =
+    "getNetwork" in signerOrProvider
+      ? (signerOrProvider as ethers.Provider)
+      : (signerOrProvider as ethers.Signer).provider ?? undefined;
+  if (!provider) throw new Error("No provider available");
+  return Number((await provider.getNetwork()).chainId);
 }
 
-export function getLocker(signerOrProvider: ethers.Signer | ethers.Provider) {
-  return new ethers.Contract(LOCKER_ADDRESS, LOCKER_ABI, signerOrProvider);
+/** Resolve the chain config for the connected wallet; throws if not deployed there. */
+export async function activeChain(signerOrProvider: ethers.Signer | ethers.Provider) {
+  const chainId = await chainIdOf(signerOrProvider);
+  const cfg = CHAINS[chainId];
+  if (!cfg) throw new Error(`Chain ${chainId} is not supported by FairLaunch.`);
+  if (!isDeployed(chainId))
+    throw new Error(`FairLaunch is not deployed on ${cfg.name} yet — coming soon.`);
+  return cfg;
+}
+
+export async function getFactory(signerOrProvider: ethers.Signer | ethers.Provider) {
+  const cfg = await activeChain(signerOrProvider);
+  return new ethers.Contract(cfg.factory, FACTORY_ABI, signerOrProvider);
+}
+
+export async function getLocker(signerOrProvider: ethers.Signer | ethers.Provider) {
+  const cfg = await activeChain(signerOrProvider);
+  return new ethers.Contract(cfg.locker, LOCKER_ABI, signerOrProvider);
 }
 
 export function getToken(address: string, signerOrProvider: ethers.Signer | ethers.Provider) {
@@ -64,6 +87,36 @@ export function getToken(address: string, signerOrProvider: ethers.Signer | ethe
 
 export function getVesting(address: string, signerOrProvider: ethers.Signer | ethers.Provider) {
   return new ethers.Contract(address, VESTING_ABI, signerOrProvider);
+}
+
+/** Ask the wallet to switch to a supported chain. */
+export async function switchChain(chainId: number) {
+  const cfg = CHAINS[chainId];
+  if (!cfg) throw new Error("Unknown chain");
+  if (!window.ethereum) throw new Error("No wallet found.");
+  try {
+    await window.ethereum.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: cfg.hexId }],
+    });
+  } catch (e: any) {
+    if (e?.code === 4902) {
+      await window.ethereum.request({
+        method: "wallet_addEthereumChain",
+        params: [
+          {
+            chainId: cfg.hexId,
+            chainName: cfg.name,
+            rpcUrls: [cfg.rpc],
+            blockExplorerUrls: [cfg.explorer],
+            nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
+          },
+        ],
+      });
+    } else {
+      throw e;
+    }
+  }
 }
 
 export function fmt(bn: bigint): string {
@@ -79,3 +132,5 @@ export function fmtDate(ts: bigint | number): string {
 export function shortAddr(a: string): string {
   return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "";
 }
+
+export { ZERO };

@@ -187,3 +187,111 @@ describe("LiquidityLocker", function () {
     ).to.be.revertedWith("unlock in past");
   });
 });
+
+describe("Multichain determinism (CREATE2)", function () {
+  it("increments the per-creator nonce and deploys different addresses per launch", async function () {
+    const { factory, creator } = await loadFixture(deployFixture);
+    expect(await factory.creatorLaunchNonce(creator.address)).to.equal(0);
+    const totalSupply = ethers.parseEther("1000");
+    await factory.createLaunch("A", "A", totalSupply, 10000, []);
+    expect(await factory.creatorLaunchNonce(creator.address)).to.equal(1);
+    const t1 = (await factory.launches(0)).token;
+    await factory.createLaunch("B", "B", totalSupply, 10000, []);
+    const t2 = (await factory.launches(1)).token;
+    expect(t1).to.not.equal(t2);
+  });
+
+  it("deploys the exact address predicted by the CREATE2 formula", async function () {
+    const hre = require("hardhat");
+    const { factory, creator, alice } = await loadFixture(deployFixture);
+    const factoryAddr = await factory.getAddress();
+    const tokenArtifact = await hre.artifacts.readArtifact("CreatorToken");
+    const vestingArtifact = await hre.artifacts.readArtifact("VestingWallet");
+    const abi = ethers.AbiCoder.defaultAbiCoder();
+
+    const totalSupply = ethers.parseEther("1000");
+    const vestAmount = ethers.parseEther("100");
+    const start = (await time.latest()) + 60;
+    const duration = 86400;
+
+    // salt = keccak256(creator, nonce=0)
+    const salt = ethers.keccak256(abi.encode(["address", "uint256"], [creator.address, 0]));
+    // vesting wallet salt = keccak256(salt, index)
+    const wsalt = ethers.keccak256(abi.encode(["bytes32", "uint256"], [salt, 0]));
+    const vestInitHash = ethers.solidityPackedKeccak256(
+      ["bytes", "bytes"],
+      [
+        vestingArtifact.bytecode,
+        abi.encode(["address", "uint64", "uint64"], [alice.address, start, duration]),
+      ]
+    );
+    const vestAddr = ethers.getCreate2Address(factoryAddr, wsalt, vestInitHash);
+
+    const tokenInitHash = ethers.solidityPackedKeccak256(
+      ["bytes", "bytes"],
+      [
+        tokenArtifact.bytecode,
+        abi.encode(
+          ["string", "string", "uint256", "uint256", "address", "address", "address[]"],
+          ["F", "F", totalSupply, 10000, creator.address, factoryAddr, [vestAddr]]
+        ),
+      ]
+    );
+    const expected = ethers.getCreate2Address(factoryAddr, salt, tokenInitHash);
+
+    const tx = await factory.createLaunch("F", "F", totalSupply, 10000, [
+      { beneficiary: alice.address, amount: vestAmount, start, duration },
+    ]);
+    const receipt = await tx.wait();
+    let tokenAddr = "";
+    let nonce = 0n;
+    for (const log of receipt.logs) {
+      try {
+        const p = factory.interface.parseLog(log);
+        if (p && p.name === "LaunchCreated") {
+          tokenAddr = p.args.token;
+          nonce = p.args.launchNonce;
+        }
+      } catch {
+        /* not our event */
+      }
+    }
+    expect(nonce).to.equal(0);
+    expect(tokenAddr).to.equal(expected);
+  });
+});
+
+describe("Red-team fixes", function () {
+  it("caps the launch fee at 1 BNB (compromised-key safeguard)", async function () {
+    const { factory } = await loadFixture(deployFixture);
+    await expect(factory.setLaunchFee(ethers.parseEther("2"))).to.be.revertedWith("fee too high");
+    await factory.setLaunchFee(ethers.parseEther("1"));
+    expect(await factory.launchFee()).to.equal(ethers.parseEther("1"));
+  });
+
+  it("emits ExemptionUpdated when exemptions change", async function () {
+    const { token, creator, alice } = await loadFixture(launchFixture);
+    await expect(token.setExempt(alice.address, true))
+      .to.emit(token, "ExemptionUpdated")
+      .withArgs(alice.address, true);
+    await expect(token.setExempt(alice.address, false))
+      .to.emit(token, "ExemptionUpdated")
+      .withArgs(alice.address, false);
+  });
+
+  it("locker records received amounts for fee-on-transfer tokens (no bricked locks)", async function () {
+    const { locker, creator, bob } = await loadFixture(deployFixture);
+    const Fee = await ethers.getContractFactory("MockFeeToken");
+    const feeToken = await Fee.deploy(ethers.parseEther("10000"));
+    const amount = ethers.parseEther("1000");
+    const unlockTime = (await time.latest()) + 30 * DAY;
+    await feeToken.approve(await locker.getAddress(), amount);
+    await locker.lock(await feeToken.getAddress(), amount, unlockTime, bob.address);
+    const l = await locker.locks(0);
+    expect(l.amount).to.equal(ethers.parseEther("900")); // 10% fee taken on deposit
+    await time.increase(31 * DAY);
+    await locker.connect(bob).withdraw(0); // must not revert
+    // withdraw of 900 incurs another 10% fee -> bob nets 810
+    expect(await feeToken.balanceOf(bob.address)).to.equal(ethers.parseEther("810"));
+  });
+});

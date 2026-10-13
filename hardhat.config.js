@@ -2,7 +2,14 @@ require("@nomicfoundation/hardhat-toolbox");
 
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
-  solidity: "0.8.24",
+  solidity: {
+    version: "0.8.24",
+    settings: {
+      // Required: the factory embeds token + vesting init code (CREATE2),
+      // which exceeds the 24KB limit unoptimized. Standard production setting.
+      optimizer: { enabled: true, runs: 200 },
+    },
+  },
   networks: {
     hardhat: {},
     bscTestnet: {

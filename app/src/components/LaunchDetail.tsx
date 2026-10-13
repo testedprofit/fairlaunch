@@ -35,6 +35,8 @@ export default function LaunchDetail({
   const [info, setInfo] = useState<any>(null);
   const [vests, setVests] = useState<VestInfo[]>([]);
   const [locks, setLocks] = useState<LockInfo[]>([]);
+  const [vestedPct, setVestedPct] = useState<string>("0");
+  const [exemptions, setExemptions] = useState<string[]>([]);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
@@ -55,7 +57,7 @@ export default function LaunchDetail({
       setInfo({ name, symbol, supply, bps: Number(bps), enabled, owner });
 
       // vesting wallets from the LaunchCreated event
-      const factory = getFactory(provider);
+      const factory = await getFactory(provider);
       const events = await factory.queryFilter(factory.filters.LaunchCreated(tokenAddr));
       const v: VestInfo[] = [];
       for (const ev of events) {
@@ -74,8 +76,28 @@ export default function LaunchDetail({
       }
       setVests(v);
 
+      // trust metrics: % of supply locked in vesting + current exemptions
+      let vestedTotal = 0n;
+      for (const w of v) {
+        const bal: bigint = await t.balanceOf(w.address);
+        vestedTotal += (w.released as bigint) + bal;
+      }
+      if (supply > 0n) setVestedPct(((vestedTotal * 10000n) / (supply as bigint)).toString());
+
+      const exEvents = await t.queryFilter(t.filters.ExemptionUpdated());
+      const exMap = new Map<string, boolean>();
+      for (const e of exEvents) {
+        const a = (e as any).args;
+        exMap.set(a.account.toLowerCase(), a.exempt);
+      }
+      const addrs: string[] = [];
+      exMap.forEach((on, addr) => {
+        if (on) addrs.push(addr);
+      });
+      setExemptions(addrs);
+
       // all LP locks
-      const locker = getLocker(provider);
+      const locker = await getLocker(provider);
       const n: bigint = await locker.lockCount();
       const ls: LockInfo[] = [];
       for (let i = 0; i < Number(n); i++) {
@@ -135,7 +157,7 @@ export default function LaunchDetail({
     try {
       setBusy("lock");
       const signer = await getSigner();
-      const locker = getLocker(signer);
+      const locker = await getLocker(signer);
       const unlockTime = Math.floor(new Date(unlockDate + "T00:00:00Z").getTime() / 1000);
       const amount = ethers.parseEther(lpAmount);
       // approve first
@@ -162,7 +184,7 @@ export default function LaunchDetail({
     setError(""); setOk("");
     try {
       setBusy("w" + id);
-      const locker = getLocker(await getSigner());
+      const locker = await getLocker(await getSigner());
       const tx = await locker.withdraw(id);
       await tx.wait();
       setOk("Lock withdrawn.");
@@ -199,6 +221,50 @@ export default function LaunchDetail({
             </button>
           </div>
         )}
+      </div>
+
+      <div className="card">
+        <h2>Trust checklist</h2>
+        <p className="muted">Everything below is verifiable on-chain — no trust required.</p>
+        <table>
+          <tbody>
+            <tr>
+              <td>✓</td>
+              <td>Whale cap</td>
+              <td>No wallet can hold more than {(info.bps / 100).toFixed(2)}% of supply</td>
+            </tr>
+            <tr>
+              <td>{info.enabled ? "✓" : "•"}</td>
+              <td>Trading gate</td>
+              <td>{info.enabled ? "Public trading is live" : "Gated — team is still setting up"}</td>
+            </tr>
+            <tr>
+              <td>{Number(vestedPct) > 0 ? "✓" : "•"}</td>
+              <td>Team vesting</td>
+              <td>{(Number(vestedPct) / 100).toFixed(2)}% of supply locked in vesting vaults</td>
+            </tr>
+            <tr>
+              <td>{locks.filter((l) => !l.withdrawn).length > 0 ? "✓" : "•"}</td>
+              <td>Liquidity locks</td>
+              <td>
+                {locks.filter((l) => !l.withdrawn).length > 0
+                  ? `${locks.filter((l) => !l.withdrawn).length} active lock(s) — liquidity can't be pulled`
+                  : "No LP locks yet — ask the creator before buying"}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <h3>Exempt addresses</h3>
+        <p className="muted">
+          These addresses bypass the wallet cap and trading gate (owner, factory,
+          vesting vaults). Any <em>new</em> exemption the owner adds appears here —
+          watch this list.
+        </p>
+        {exemptions.map((a) => (
+          <div key={a} className="muted" style={{ fontFamily: "monospace", marginBottom: 4 }}>
+            {a}
+          </div>
+        ))}
       </div>
 
       <div className="card">

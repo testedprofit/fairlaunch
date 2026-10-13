@@ -73,8 +73,16 @@ Three contracts, no proxies, no admin keys beyond the documented switches:
   token so releases always work), funds them, and emits `LaunchCreated` for
   transparent indexing. Collects the flat protocol fee to the treasury.
 - **`LiquidityLocker.sol`** — time-lock vault for any LP tokens. `lock()` /
-  `withdraw()`; early withdrawal reverts on-chain. Compatible with PancakeSwap
-  v2/v3 LP tokens.
+  `withdraw()`; early withdrawal reverts on-chain. Deposits are
+  balance-measured, so fee-on-transfer tokens can't brick a lock. Compatible
+  with PancakeSwap v2/v3 LP tokens.
+
+**Multichain-native.** The factory deploys tokens via CREATE2 with
+`salt = keccak256(creator, nonce)`, and the factory itself is deployed via the
+canonical keyless deployer — so FairLaunch lives at the same addresses on every
+EVM chain. One registry, one frontend, per-chain sovereignty, zero bridges
+(bridges are unnecessary attack surface for a factory). Full procedure:
+[MULTICHAIN.md](./MULTICHAIN.md). Security review: [SECURITY.md](./SECURITY.md).
 
 Deliberate omissions: no custom vesting math (audited OZ instead), no
 upgradeable proxies (immutable = trustworthy), no blacklist/tax functions
@@ -175,7 +183,7 @@ as an upsell; FairLaunch makes it the only option.
 
 ## 9. Roadmap
 
-- **Phase 1 (now)** — Testnet dApp live; 11/11 contract tests passing; grant
+- **Phase 1 (now)** — Testnet dApp live; 16/16 contract tests passing (incl. CREATE2 proof + red-team cases); grant
   application (BNB Chain Builder Grant, Nov 2026 window).
 - **Phase 2 (grant-funded)** — Professional audit + remediation; mainnet
   deployment; one-click "add PancakeSwap liquidity + lock LP"; per-launch

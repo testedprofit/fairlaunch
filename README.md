@@ -32,14 +32,16 @@ fairlaunch/
 │   ├── FairLaunchFactory.sol # one-click launch: token + vesting vaults + fee
 │   └── LiquidityLocker.sol   # time-lock vault for LP tokens
 ├── test/
-│   └── FairLaunch.test.js    # 11 tests, all passing
+│   └── FairLaunch.test.js    # 16 tests, all passing (incl. CREATE2 proof + red-team cases)
 ├── scripts/
 │   └── deploy.js             # deploys factory + locker
-├── app/                      # Vite + React + ethers v6 frontend
+├── app/                      # Vite + React + ethers v6 frontend (multichain registry + trust dashboard)
 │   └── src/
 │       ├── components/       # LaunchForm, Explore, LaunchDetail
 │       └── lib/contracts.ts  # ABIs + wallet helpers
 ├── WHITEPAPER.md             # tokenomics, use cases, competition, roadmap
+├── SECURITY.md               # red-team report: findings, mitigations, audit scope
+├── MULTICHAIN.md             # deterministic deployment procedure + chain registry
 ├── grant-application.md      # BNB Builder Grant draft answers
 └── README.md
 ```

@@ -28,16 +28,24 @@ contract FairLaunchFactory {
 
     /// @notice Flat protocol fee per launch, in wei. 0 = free.
     uint256 public launchFee;
+    /// @notice Hard cap on the launch fee: a compromised owner key can't set an absurd fee.
+    uint256 public constant MAX_LAUNCH_FEE = 1 ether;
     /// @notice Where launch fees are sent.
     address public treasury;
     address public owner;
+
+    /// @notice Per-creator launch counter. Salt = keccak256(creator, nonce), so the
+    /// Nth launch by an address lands at the same token address on every chain
+    /// where this factory is deployed (via the same deterministic deployer).
+    mapping(address => uint256) public creatorLaunchNonce;
 
     event LaunchCreated(
         address indexed token,
         address indexed creator,
         address[] vestingWallets,
         uint256 totalSupply,
-        uint256 timestamp
+        uint256 timestamp,
+        uint256 launchNonce
     );
     event LaunchFeeUpdated(uint256 newFee);
     event TreasuryUpdated(address newTreasury);
@@ -53,6 +61,7 @@ contract FairLaunchFactory {
     }
 
     function setLaunchFee(uint256 fee_) external onlyOwner {
+        require(fee_ <= MAX_LAUNCH_FEE, "fee too high");
         launchFee = fee_;
         emit LaunchFeeUpdated(fee_);
     }
@@ -88,16 +97,25 @@ contract FairLaunchFactory {
         }
         require(vestedTotal <= totalSupply_, "vesting exceeds supply");
 
-        // 1. Deploy vesting vaults first so they can be exempted on the token.
+        // Deterministic salt: same creator + same nonce => same token address on
+        // every chain where this factory is deployed at the same address.
+        uint256 nonce = creatorLaunchNonce[msg.sender]++;
+        bytes32 salt = keccak256(abi.encode(msg.sender, nonce));
+
+        // 1. Deploy vesting vaults first (deterministic salts) so they can be exempted.
         address[] memory wallets = new address[](allocations.length);
         for (uint256 i = 0; i < allocations.length; i++) {
             VestingAllocation calldata a = allocations[i];
-            VestingWallet w = new VestingWallet(a.beneficiary, a.start, a.duration);
+            VestingWallet w = new VestingWallet{salt: keccak256(abi.encode(salt, i))}(
+                a.beneficiary,
+                a.start,
+                a.duration
+            );
             wallets[i] = address(w);
         }
 
-        // 2. Deploy the token (owner = creator, supply minted to factory).
-        CreatorToken t = new CreatorToken(
+        // 2. Deploy the token via CREATE2 (owner = creator, supply minted to factory).
+        CreatorToken t = new CreatorToken{salt: salt}(
             name_,
             symbol_,
             totalSupply_,
@@ -120,7 +138,7 @@ contract FairLaunchFactory {
 
         launches.push(Launch(token, msg.sender, wallets, block.timestamp));
         launchesByCreator[msg.sender].push(launches.length - 1);
-        emit LaunchCreated(token, msg.sender, wallets, totalSupply_, block.timestamp);
+        emit LaunchCreated(token, msg.sender, wallets, totalSupply_, block.timestamp, nonce);
     }
 
     function launchCount() external view returns (uint256) {

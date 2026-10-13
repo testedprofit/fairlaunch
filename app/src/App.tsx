@@ -3,7 +3,8 @@ import { ethers } from "ethers";
 import LaunchForm from "./components/LaunchForm";
 import Explore from "./components/Explore";
 import LaunchDetail from "./components/LaunchDetail";
-import { NETWORKS } from "./config";
+import { CHAINS, isDeployed } from "./config";
+import { switchChain } from "./lib/contracts";
 
 export default function App() {
   const [account, setAccount] = useState<string | null>(null);
@@ -45,7 +46,8 @@ export default function App() {
     refresh();
   }
 
-  const netOk = chainId !== null && NETWORKS[chainId] !== undefined;
+  const netKnown = chainId !== null && CHAINS[chainId] !== undefined;
+  const netLive = chainId !== null && isDeployed(chainId);
 
   return (
     <div className="wrap">
@@ -66,11 +68,31 @@ export default function App() {
         )}
       </header>
 
-      {chainId !== null && !netOk && (
+      {chainId !== null && !netKnown && (
         <div className="alert warn">
-          You're on an unsupported network (chain {chainId}). Switch to BSC Testnet (97) or BNB Chain (56).
+          You're on an unsupported network (chain {chainId}). Pick a supported chain below.
         </div>
       )}
+      {chainId !== null && netKnown && !netLive && (
+        <div className="alert warn">
+          FairLaunch isn't deployed on {CHAINS[chainId].name} yet — switch to a live chain below.
+        </div>
+      )}
+
+      <nav className="tabs" style={{ marginBottom: 16 }}>
+        {Object.values(CHAINS).map((c) => (
+          <button
+            key={c.chainId}
+            className={chainId === c.chainId ? "active" : ""}
+            disabled={!isDeployed(c.chainId)}
+            onClick={() => switchChain(c.chainId).catch(() => {})}
+            title={isDeployed(c.chainId) ? `Switch to ${c.name}` : `${c.name} — coming soon`}
+          >
+            {c.shortName}
+            {!isDeployed(c.chainId) && " · soon"}
+          </button>
+        ))}
+      </nav>
 
       {selected ? (
         <LaunchDetail token={selected} account={account} onBack={() => setSelected(null)} />
